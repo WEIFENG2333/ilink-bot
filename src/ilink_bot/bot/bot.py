@@ -213,7 +213,10 @@ class WeChatBot:
                 )
 
                 if is_error:
-                    if resp.errcode == SESSION_EXPIRED_ERRCODE or resp.ret == SESSION_EXPIRED_ERRCODE:
+                    if (
+                        resp.errcode == SESSION_EXPIRED_ERRCODE
+                        or resp.ret == SESSION_EXPIRED_ERRCODE
+                    ):
                         logger.error("Session expired (errcode=%s), pausing 5 min", resp.errcode)
                         await asyncio.sleep(300)
                         continue
@@ -221,8 +224,11 @@ class WeChatBot:
                     consecutive_failures += 1
                     logger.warning(
                         "getUpdates error: ret=%s errcode=%s errmsg=%s (%d/%d)",
-                        resp.ret, resp.errcode, resp.errmsg,
-                        consecutive_failures, MAX_CONSECUTIVE_FAILURES,
+                        resp.ret,
+                        resp.errcode,
+                        resp.errmsg,
+                        consecutive_failures,
+                        MAX_CONSECUTIVE_FAILURES,
                     )
                     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                         logger.error("Too many failures, backing off %.1fs", MAX_BACKOFF)

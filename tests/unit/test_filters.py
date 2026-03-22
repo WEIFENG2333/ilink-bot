@@ -83,6 +83,7 @@ class TestRegexFilter:
 
     def test_case_insensitive(self):
         import re
+
         f = regex(r"hello", re.IGNORECASE)
         assert f(_make_msg("HELLO world")) is True
 

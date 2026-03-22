@@ -48,9 +48,7 @@ class TestWeChatMessage:
             "message_type": 1,
             "message_state": 2,
             "create_time_ms": 1742000000000,
-            "item_list": [
-                {"type": 1, "text_item": {"text": "Hello bot!"}}
-            ],
+            "item_list": [{"type": 1, "text_item": {"text": "Hello bot!"}}],
             "context_token": "ctx_abc",
         }
         msg = WeChatMessage(**data)
@@ -156,9 +154,7 @@ class TestHighLevelMessage:
         assert msg.image.mid_size == 512
 
     def test_voice_to_text(self):
-        raw = self._make_raw(
-            item_list=[{"type": 3, "voice_item": {"text": "voice transcription"}}]
-        )
+        raw = self._make_raw(item_list=[{"type": 3, "voice_item": {"text": "voice transcription"}}])
         msg = Message(raw)
         assert msg.type == MessageItemType.VOICE
         assert msg.text == "voice transcription"
@@ -177,6 +173,7 @@ class TestHighLevelMessage:
 
     async def test_reply_without_client_raises(self):
         import pytest
+
         msg = Message(self._make_raw())
         with pytest.raises(RuntimeError, match="no associated ILinkClient"):
             await msg.reply("test")

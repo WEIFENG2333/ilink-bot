@@ -19,6 +19,7 @@ from ilink_bot.client.client import (
 class TestHelpers:
     def test_random_wechat_uin_is_base64(self):
         import base64
+
         uin = _random_wechat_uin()
         # Should be valid base64
         decoded = base64.b64decode(uin).decode()
@@ -74,6 +75,7 @@ class TestTokenPersistence:
 
         # Check permissions (Unix only)
         import os
+
         if os.name != "nt":
             assert oct(token_file.stat().st_mode)[-3:] == "600"
 
@@ -91,10 +93,13 @@ class TestAPIRequests:
     @pytest.mark.asyncio
     async def test_get_qrcode(self):
         respx.get(f"{DEFAULT_BASE_URL}/ilink/bot/get_bot_qrcode").mock(
-            return_value=httpx.Response(200, json={
-                "qrcode": "qr_abc123",
-                "qrcode_img_content": "https://example.com/qr.png",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "qrcode": "qr_abc123",
+                    "qrcode_img_content": "https://example.com/qr.png",
+                },
+            )
         )
 
         async with ILinkClient(token="test") as client:
@@ -105,18 +110,21 @@ class TestAPIRequests:
     @pytest.mark.asyncio
     async def test_get_updates_success(self):
         respx.post(f"{DEFAULT_BASE_URL}/ilink/bot/getupdates").mock(
-            return_value=httpx.Response(200, json={
-                "ret": 0,
-                "msgs": [
-                    {
-                        "message_id": 42,
-                        "from_user_id": "user@im.wechat",
-                        "message_type": 1,
-                        "item_list": [{"type": 1, "text_item": {"text": "hello"}}],
-                    }
-                ],
-                "get_updates_buf": "new_cursor",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "ret": 0,
+                    "msgs": [
+                        {
+                            "message_id": 42,
+                            "from_user_id": "user@im.wechat",
+                            "message_type": 1,
+                            "item_list": [{"type": 1, "text_item": {"text": "hello"}}],
+                        }
+                    ],
+                    "get_updates_buf": "new_cursor",
+                },
+            )
         )
 
         async with ILinkClient(token="test") as client:
@@ -169,10 +177,13 @@ class TestAPIRequests:
     @pytest.mark.asyncio
     async def test_get_config(self):
         respx.post(f"{DEFAULT_BASE_URL}/ilink/bot/getconfig").mock(
-            return_value=httpx.Response(200, json={
-                "ret": 0,
-                "typing_ticket": "ticket_xyz",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "ret": 0,
+                    "typing_ticket": "ticket_xyz",
+                },
+            )
         )
 
         async with ILinkClient(token="test") as client:

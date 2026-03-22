@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class MessageType(int, enum.Enum):
     """Who sent the message."""
 
@@ -75,6 +76,7 @@ class QRCodeStatus(str, enum.Enum):
 # ---------------------------------------------------------------------------
 # Protocol sub-structures
 # ---------------------------------------------------------------------------
+
 
 class BaseInfo(BaseModel):
     """Metadata attached to every outgoing API request."""
@@ -164,6 +166,7 @@ RefMessage.model_rebuild()
 # Wire-level message (matches upstream ``WeixinMessage``)
 # ---------------------------------------------------------------------------
 
+
 class WeChatMessage(BaseModel):
     """Raw message as returned by ``getupdates``."""
 
@@ -186,6 +189,7 @@ class WeChatMessage(BaseModel):
 # ---------------------------------------------------------------------------
 # API request / response models
 # ---------------------------------------------------------------------------
+
 
 class GetUpdatesRequest(BaseModel):
     get_updates_buf: str = ""
@@ -262,6 +266,7 @@ class SendTypingRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # High-level ``Message`` — the primary object developers interact with
 # ---------------------------------------------------------------------------
+
 
 class Message:
     """Developer-friendly message object with convenience methods.
@@ -379,4 +384,6 @@ class Message:
 
     def __repr__(self) -> str:
         preview = (self.text or "")[:40]
-        return f"<Message id={self.id} from={self.from_user!r} type={self.type.name} text={preview!r}>"
+        return (
+            f"<Message id={self.id} from={self.from_user!r} type={self.type.name} text={preview!r}>"
+        )

@@ -29,6 +29,7 @@ class TestWebhookConfig:
 class TestWebhookGateway:
     def _make_gateway(self, *, url: str = "https://hook.example.com", secret: str = "test_secret"):
         from ilink_bot.client.client import ILinkClient
+
         client = ILinkClient(token="dummy")
         config = WebhookConfig(url=url, secret=secret)
         return WebhookGateway(client=client, config=config)
@@ -86,9 +87,7 @@ class TestWebhookGateway:
     @respx.mock
     @pytest.mark.asyncio
     async def test_push_success(self):
-        respx.post("https://hook.example.com").mock(
-            return_value=httpx.Response(200)
-        )
+        respx.post("https://hook.example.com").mock(return_value=httpx.Response(200))
 
         gw = self._make_gateway()
         result = await gw._push({"id": "1", "content": "test"})
@@ -97,9 +96,7 @@ class TestWebhookGateway:
     @respx.mock
     @pytest.mark.asyncio
     async def test_push_4xx_no_retry(self):
-        respx.post("https://hook.example.com").mock(
-            return_value=httpx.Response(400)
-        )
+        respx.post("https://hook.example.com").mock(return_value=httpx.Response(400))
 
         gw = self._make_gateway()
         gw.config.max_retries = 3
@@ -111,9 +108,7 @@ class TestWebhookGateway:
     @respx.mock
     @pytest.mark.asyncio
     async def test_push_signature_header(self):
-        route = respx.post("https://hook.example.com").mock(
-            return_value=httpx.Response(200)
-        )
+        route = respx.post("https://hook.example.com").mock(return_value=httpx.Response(200))
 
         gw = self._make_gateway(secret="my_secret")
         await gw._push({"id": "1"})

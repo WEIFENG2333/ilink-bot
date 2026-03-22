@@ -62,6 +62,7 @@ QR_POLL_TIMEOUT = 35.0
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _random_wechat_uin() -> str:
     """Generate ``X-WECHAT-UIN`` header value: base64(str(random_uint32))."""
     raw = os.urandom(4)
@@ -76,6 +77,7 @@ def _build_base_info() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # ILinkClient
 # ---------------------------------------------------------------------------
+
 
 class ILinkClient:
     """Async HTTP client for the WeChat iLink Bot protocol.
@@ -114,7 +116,9 @@ class ILinkClient:
     async def _ensure_http(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:
             self._http = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=5.0, read=LONG_POLL_TIMEOUT + 5, write=5.0, pool=10.0),
+                timeout=httpx.Timeout(
+                    connect=5.0, read=LONG_POLL_TIMEOUT + 5, write=5.0, pool=10.0
+                ),
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
             )
         return self._http
@@ -190,7 +194,9 @@ class ILinkClient:
         except Exception:
             logger.warning("Failed to load token from %s", self._token_file, exc_info=True)
 
-    def _save_token(self, token: str, base_url: str = "", bot_id: str = "", user_id: str = "") -> None:
+    def _save_token(
+        self, token: str, base_url: str = "", bot_id: str = "", user_id: str = ""
+    ) -> None:
         self._token_file.parent.mkdir(parents=True, exist_ok=True)
         data = BotToken(
             token=token,
@@ -283,7 +289,9 @@ class ILinkClient:
                 continue
             if status.status == QRCodeStatus.CONFIRMED:
                 if not status.bot_token or not status.ilink_bot_id:
-                    raise RuntimeError("Login confirmed but server returned no bot_token/ilink_bot_id")
+                    raise RuntimeError(
+                        "Login confirmed but server returned no bot_token/ilink_bot_id"
+                    )
                 base_url = (status.baseurl or self._base_url).rstrip("/")
                 self._token = status.bot_token
                 self._base_url = base_url

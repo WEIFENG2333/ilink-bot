@@ -47,6 +47,7 @@ class Filter:
 # Built-in filter constructors
 # ---------------------------------------------------------------------------
 
+
 def _is_text(msg: Message) -> bool:
     return msg.type == MessageItemType.TEXT
 
@@ -73,38 +74,47 @@ def _all_messages(_msg: Message) -> bool:
 
 def contains(keyword: str) -> Filter:
     """Match messages whose text contains *keyword* (case-sensitive)."""
+
     def _check(msg: Message) -> bool:
         return keyword in (msg.text or "")
+
     return Filter(_check, f"contains({keyword!r})")
 
 
 def regex(pattern: str, flags: int = 0) -> Filter:
     """Match messages whose text matches a regular expression."""
     compiled = re.compile(pattern, flags)
+
     def _check(msg: Message) -> bool:
         return bool(compiled.search(msg.text or ""))
+
     return Filter(_check, f"regex({pattern!r})")
 
 
 def command(cmd: str) -> Filter:
     """Match messages that start with ``/cmd`` (slash-command style)."""
     prefix = f"/{cmd}"
+
     def _check(msg: Message) -> bool:
         text = msg.text or ""
         return text == prefix or text.startswith(f"{prefix} ")
+
     return Filter(_check, f"command({cmd!r})")
 
 
 def from_user(user_id: str) -> Filter:
     """Match messages from a specific user."""
+
     def _check(msg: Message) -> bool:
         return msg.from_user == user_id
+
     return Filter(_check, f"from_user({user_id!r})")
 
 
 # ---------------------------------------------------------------------------
 # Public namespace — ``from ilink_bot import filters``
 # ---------------------------------------------------------------------------
+
 
 class _Filters:
     """Namespace object that holds all built-in filters as attributes."""

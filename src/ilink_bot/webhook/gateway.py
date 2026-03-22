@@ -111,14 +111,26 @@ class WebhookGateway:
                 if resp.status_code < 400:
                     return True
                 if resp.status_code < 500:
-                    logger.warning("Webhook 4xx (no retry): %d %s", resp.status_code, resp.text[:200])
+                    logger.warning(
+                        "Webhook 4xx (no retry): %d %s", resp.status_code, resp.text[:200]
+                    )
                     return False
-                logger.warning("Webhook 5xx: %d (attempt %d/%d)", resp.status_code, attempt + 1, self.config.max_retries)
+                logger.warning(
+                    "Webhook 5xx: %d (attempt %d/%d)",
+                    resp.status_code,
+                    attempt + 1,
+                    self.config.max_retries,
+                )
             except Exception:
-                logger.error("Webhook push error (attempt %d/%d)", attempt + 1, self.config.max_retries, exc_info=True)
+                logger.error(
+                    "Webhook push error (attempt %d/%d)",
+                    attempt + 1,
+                    self.config.max_retries,
+                    exc_info=True,
+                )
 
             if attempt < self.config.max_retries - 1:
-                delay = self.config.retry_backoff * (2 ** attempt)
+                delay = self.config.retry_backoff * (2**attempt)
                 await asyncio.sleep(delay)
 
         logger.error("Webhook push failed after %d retries", self.config.max_retries)

@@ -57,7 +57,9 @@ def _setup_logging(verbose: bool = False) -> None:
 
 @app.command()
 def login(
-    token_file: Path = typer.Option(DEFAULT_TOKEN_FILE, "--token-file", "-f", help="Token file path"),
+    token_file: Path = typer.Option(
+        DEFAULT_TOKEN_FILE, "--token-file", "-f", help="Token file path"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Scan QR code to login with your WeChat account."""
@@ -73,6 +75,7 @@ def login(
             # Try to display QR in terminal
             try:
                 import qrcode as qr_lib  # type: ignore[import-untyped]
+
                 q = qr_lib.QRCode(border=1)
                 q.add_data(qr.qrcode_img_content)
                 q.print_ascii(invert=True)

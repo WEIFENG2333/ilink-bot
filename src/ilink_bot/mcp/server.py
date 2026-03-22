@@ -75,12 +75,14 @@ def create_mcp_server(
                     if resp.get_updates_buf:
                         _cursor = resp.get_updates_buf
                     for msg in resp.msgs:
-                        _messages_cache.append({
-                            "from": msg.from_user_id or "",
-                            "text": _extract_text(msg),
-                            "type": _extract_type(msg),
-                            "timestamp": msg.create_time_ms,
-                        })
+                        _messages_cache.append(
+                            {
+                                "from": msg.from_user_id or "",
+                                "text": _extract_text(msg),
+                                "type": _extract_type(msg),
+                                "timestamp": msg.create_time_ms,
+                            }
+                        )
                         # Keep only last 100 messages
                         if len(_messages_cache) > 100:
                             _messages_cache.pop(0)
