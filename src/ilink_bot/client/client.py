@@ -414,9 +414,21 @@ class ILinkClient:
 
         If *context_token* is ``None``, the client automatically uses the
         cached token from the most recent inbound message from *to_user_id*.
+
+        .. warning::
+
+            The iLink protocol requires ``context_token`` for message delivery.
+            If no token is available (neither explicit nor cached), the message
+            may fail silently on the server side.
         """
         ctx = self._resolve_context_token(to_user_id, context_token)
-        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        if not ctx:
+            logger.warning(
+                "No context_token for %s — message may not be delivered. "
+                "User must send a message first.",
+                to_user_id,
+            )
+        client_id = f"ilink-bot:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         body = {
             "msg": {
                 "from_user_id": "",
@@ -536,7 +548,7 @@ class ILinkClient:
         """
         ctx = self._resolve_context_token(to_user_id, context_token)
         uploaded = await self._upload_and_build_item(image_data, UploadMediaType.IMAGE, to_user_id)
-        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        client_id = f"ilink-bot:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         body = {
             "msg": {
                 "from_user_id": "",
@@ -588,7 +600,7 @@ class ILinkClient:
 
         ctx = self._resolve_context_token(to_user_id, context_token)
         uploaded = await self._upload_and_build_item(file_data, UploadMediaType.FILE, to_user_id)
-        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        client_id = f"ilink-bot:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         body = {
             "msg": {
                 "from_user_id": "",
@@ -628,7 +640,7 @@ class ILinkClient:
         """Upload and send a video message."""
         ctx = self._resolve_context_token(to_user_id, context_token)
         uploaded = await self._upload_and_build_item(video_data, UploadMediaType.VIDEO, to_user_id)
-        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        client_id = f"ilink-bot:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         body = {
             "msg": {
                 "from_user_id": "",
@@ -666,7 +678,7 @@ class ILinkClient:
         """Upload and send a voice message."""
         ctx = self._resolve_context_token(to_user_id, context_token)
         uploaded = await self._upload_and_build_item(voice_data, UploadMediaType.VOICE, to_user_id)
-        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        client_id = f"ilink-bot:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         body = {
             "msg": {
                 "from_user_id": "",

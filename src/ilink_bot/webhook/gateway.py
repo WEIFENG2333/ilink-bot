@@ -63,10 +63,14 @@ class WebhookGateway:
         """Convert a raw message to the webhook payload format."""
         text = ""
         msg_type = "unknown"
+        quoted = ""
         for item in msg.item_list or []:
             if item.type == 1 and item.text_item:
                 text = item.text_item.text or ""
                 msg_type = "text"
+                # Extract quoted/referenced message
+                if item.ref_msg and item.ref_msg.title:
+                    quoted = item.ref_msg.title
                 break
             if item.type == 2:
                 msg_type = "image"
@@ -83,11 +87,14 @@ class WebhookGateway:
                 msg_type = "video"
                 break
 
+        sender_id = msg.from_user_id or ""
         return {
             "id": str(msg.message_id or ""),
-            "from_user": msg.from_user_id or "",
+            "from_user": sender_id,
+            "from_name": sender_id.split("@")[0] if "@" in sender_id else sender_id,
             "type": msg_type,
             "content": text,
+            "quoted": quoted,
             "timestamp": msg.create_time_ms or 0,
             "context_token": msg.context_token or "",
         }

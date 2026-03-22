@@ -165,6 +165,35 @@ class TestHighLevelMessage:
         assert msg.type == MessageItemType.NONE
         assert msg.text is None
 
+    def test_from_user_name(self):
+        msg = Message(self._make_raw(from_user_id="alice@im.wechat"))
+        assert msg.from_user_name == "alice"
+
+    def test_from_user_name_no_at(self):
+        msg = Message(self._make_raw(from_user_id="alice"))
+        assert msg.from_user_name == "alice"
+
+    def test_quoted_message(self):
+        raw = self._make_raw(
+            item_list=[
+                {
+                    "type": 1,
+                    "text_item": {"text": "reply text"},
+                    "ref_msg": {"title": "original message"},
+                }
+            ]
+        )
+        msg = Message(raw)
+        assert msg.text == "[引用: original message]\nreply text"
+        assert msg.quoted_text == "original message"
+        assert msg.ref_message is not None
+        assert msg.ref_message.title == "original message"
+
+    def test_no_quoted_message(self):
+        msg = Message(self._make_raw())
+        assert msg.quoted_text is None
+        assert msg.ref_message is None
+
     def test_repr(self):
         msg = Message(self._make_raw())
         r = repr(msg)

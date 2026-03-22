@@ -58,8 +58,10 @@ class TestWebhookGateway:
         payload = gw._format_message(msg)
         assert payload["id"] == "42"
         assert payload["from_user"] == "user@im.wechat"
+        assert payload["from_name"] == "user"
         assert payload["type"] == "text"
         assert payload["content"] == "hello"
+        assert payload["quoted"] == ""
         assert payload["timestamp"] == 1742000000000
 
     def test_format_image_message(self):
@@ -83,6 +85,24 @@ class TestWebhookGateway:
         payload = gw._format_message(msg)
         assert payload["type"] == "voice"
         assert payload["content"] == "voice text"
+
+    def test_format_quoted_message(self):
+        gw = self._make_gateway()
+        msg = WeChatMessage(
+            message_id=99,
+            from_user_id="alice@im.wechat",
+            item_list=[
+                {
+                    "type": 1,
+                    "text_item": {"text": "reply"},
+                    "ref_msg": {"title": "original msg"},
+                }
+            ],
+        )
+        payload = gw._format_message(msg)
+        assert payload["content"] == "reply"
+        assert payload["quoted"] == "original msg"
+        assert payload["from_name"] == "alice"
 
     @respx.mock
     @pytest.mark.asyncio

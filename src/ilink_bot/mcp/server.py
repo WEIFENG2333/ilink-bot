@@ -50,10 +50,18 @@ def _check_mcp_available() -> None:
 
 
 def _extract_text(msg: Any) -> str:
-    """Extract the text content from a message's item_list."""
+    """Extract the text content from a message's item_list.
+
+    If the message contains a quoted reference (``ref_msg``), the quote
+    title is prepended as ``[引用: <title>]\\n<text>``.
+    """
     for item in msg.item_list or []:
         if item.type == 1 and item.text_item:
-            return str(item.text_item.text or "")
+            text = str(item.text_item.text or "")
+            # Include quoted/referenced message context
+            if item.ref_msg and item.ref_msg.title:
+                return f"[引用: {item.ref_msg.title}]\n{text}"
+            return text
         if item.type == 3 and item.voice_item and item.voice_item.text:
             return str(item.voice_item.text)
     return ""
@@ -81,6 +89,9 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:  # type: i
     - ``messages``: a shared list of recently received messages
     - ``poll_event``: an :class:`asyncio.Event` set once polling has started
     """
+    import json
+    from pathlib import Path
+
     from ilink_bot.client.client import ILinkClient
 
     client = ILinkClient()
@@ -91,26 +102,56 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:  # type: i
     messages: list[dict[str, Any]] = []
     poll_event = asyncio.Event()
 
+    # Cursor persistence — avoid replaying old messages on restart
+    cursor_file = Path(client._token_file).parent / "mcp_cursor.json"
+
+    def _load_cursor() -> str:
+        try:
+            if cursor_file.exists():
+                data = json.loads(cursor_file.read_text())
+                buf = str(data.get("get_updates_buf", ""))
+                if buf:
+                    logger.info("Restored MCP sync cursor (%d bytes)", len(buf))
+                return buf
+        except Exception:
+            logger.warning("Failed to load MCP cursor", exc_info=True)
+        return ""
+
+    def _save_cursor(cursor: str) -> None:
+        try:
+            cursor_file.parent.mkdir(parents=True, exist_ok=True)
+            cursor_file.write_text(json.dumps({"get_updates_buf": cursor}))
+        except Exception:
+            logger.warning("Failed to save MCP cursor", exc_info=True)
+
     async def _poll_loop() -> None:
         """Background loop: long-poll for new messages."""
-        cursor = ""
+        cursor = _load_cursor()
         poll_event.set()
         while True:
             try:
                 resp = await client.get_updates(cursor)
                 if resp.get_updates_buf:
                     cursor = resp.get_updates_buf
+                    _save_cursor(cursor)
                 for msg in resp.msgs:
+                    # Only cache user messages (skip bot's own)
+                    if msg.message_type != 1:
+                        continue
+                    sender_id = msg.from_user_id or ""
+                    sender_name = sender_id.split("@")[0] if "@" in sender_id else sender_id
                     messages.append(
                         {
-                            "from": msg.from_user_id or "",
+                            "from": sender_id,
+                            "from_name": sender_name,
                             "text": _extract_text(msg),
                             "type": _extract_type(msg),
                             "timestamp": msg.create_time_ms,
+                            "context_token": msg.context_token or "",
                         }
                     )
-                    # Keep only the last 100 messages
-                    if len(messages) > 100:
+                    # Keep only the last 200 messages
+                    if len(messages) > 200:
                         messages.pop(0)
             except asyncio.CancelledError:
                 break
@@ -166,11 +207,16 @@ if mcp is not None:
     ) -> str:
         """Send a text message to a WeChat user.
 
+        The context_token is required by the iLink protocol for message delivery.
+        If not provided explicitly, it is auto-resolved from the client's cache
+        (populated by inbound messages).  If no cached token exists, the send
+        will fail — the user must send a message to the bot first.
+
         Args:
             to_user_id: The recipient's WeChat user ID (xxx@im.wechat format).
-            content: The text message body to send.
+            content: The text message body to send.  Use plain text, not markdown.
             ctx: MCP request context (injected automatically).
-            context_token: Optional context token for conversation threading.
+            context_token: Optional context token; auto-resolved from cache if omitted.
 
         Returns:
             A confirmation string containing the client-side message ID.
@@ -181,8 +227,19 @@ if mcp is not None:
         if not client.is_authenticated:
             return "Error: bot is not authenticated. Run `ilink-bot login` first."
 
-        result = await client.send_text(to_user_id, content, context_token=context_token)
-        return f"Message sent (id={result.get('message_id', 'unknown')})"
+        # Resolve context_token: explicit > client cache
+        resolved_token = context_token or client.get_context_token(to_user_id)
+        if not resolved_token:
+            return (
+                f"Error: no context_token for {to_user_id}. "
+                "The user must send a message to the bot first before you can reply."
+            )
+
+        try:
+            result = await client.send_text(to_user_id, content, context_token=resolved_token)
+            return f"Message sent (id={result.get('message_id', 'unknown')})"
+        except Exception as exc:
+            return f"Send failed: {exc}"
 
     @mcp.tool()
     async def wechat_get_messages(
@@ -191,15 +248,16 @@ if mcp is not None:
     ) -> list[dict[str, Any]]:
         """Get recent messages received by the bot.
 
-        Returns the most recent messages from the in-memory cache populated
-        by the background polling task.
+        Returns the most recent **user** messages from the in-memory cache
+        populated by the background polling task.
 
         Args:
             ctx: MCP request context (injected automatically).
             limit: Maximum number of messages to return (1-100, default 10).
 
         Returns:
-            A list of message dicts with keys: from, text, type, timestamp.
+            A list of message dicts with keys: from, from_name, text, type,
+            timestamp, context_token.
         """
         lifespan_ctx: dict[str, Any] = ctx.request_context.lifespan_context
         messages: list[dict[str, Any]] = lifespan_ctx["messages"]

@@ -290,6 +290,12 @@ class Message:
         return self._raw.from_user_id or ""
 
     @property
+    def from_user_name(self) -> str:
+        """Short display name: part before ``@`` in the user ID."""
+        uid = self.from_user
+        return uid.split("@")[0] if "@" in uid else uid
+
+    @property
     def to_user(self) -> str:
         return self._raw.to_user_id or ""
 
@@ -322,12 +328,36 @@ class Message:
 
     @property
     def text(self) -> str | None:
-        """Extract text from the first TEXT item, or voice-to-text."""
+        """Extract text from the first TEXT item, or voice-to-text.
+
+        If the message contains a quoted/referenced message (``ref_msg``),
+        the quote title is prepended as ``[引用: <title>]\\n<text>``.
+        """
         for item in self._raw.item_list or []:
             if item.type == MessageItemType.TEXT and item.text_item:
-                return item.text_item.text
+                raw_text = item.text_item.text or ""
+                # Prepend quoted reference if present
+                if item.ref_msg and item.ref_msg.title:
+                    return f"[引用: {item.ref_msg.title}]\n{raw_text}"
+                return raw_text or None
             if item.type == MessageItemType.VOICE and item.voice_item and item.voice_item.text:
                 return item.voice_item.text
+        return None
+
+    @property
+    def quoted_text(self) -> str | None:
+        """Title of the quoted/referenced message, if any."""
+        for item in self._raw.item_list or []:
+            if item.ref_msg and item.ref_msg.title:
+                return item.ref_msg.title
+        return None
+
+    @property
+    def ref_message(self) -> RefMessage | None:
+        """The full :class:`RefMessage` object, if the message quotes another."""
+        for item in self._raw.item_list or []:
+            if item.ref_msg:
+                return item.ref_msg
         return None
 
     @property
