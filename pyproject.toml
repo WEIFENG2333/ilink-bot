@@ -39,7 +39,8 @@ mcp = [
     "mcp>=1.0.0",
 ]
 webhook = [
-    "aiohttp>=3.9.0",
+    # Webhook gateway uses httpx (core dependency); this extra is kept for
+    # forward-compatibility (e.g. if an inbound webhook receiver is added).
 ]
 cli = [
     "typer>=0.12.0",

@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from ilink_bot.models.messages import MessageType
+
 if TYPE_CHECKING:
     from ilink_bot.client.client import ILinkClient
     from ilink_bot.models.messages import WeChatMessage
@@ -164,7 +166,7 @@ class WebhookGateway:
                     self._cursor = resp.get_updates_buf
 
                 for msg in resp.msgs:
-                    if msg.message_type != 1:  # Only user messages
+                    if msg.message_type != MessageType.USER:
                         continue
                     payload = self._format_message(msg)
                     await self._push(payload)

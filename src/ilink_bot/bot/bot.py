@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ilink_bot.client.client import DEFAULT_TOKEN_FILE, ILinkClient
-from ilink_bot.models.messages import Message, WeChatMessage
+from ilink_bot.models.messages import Message, MessageType, WeChatMessage
 
 if TYPE_CHECKING:
     from ilink_bot.bot.filters import Filter
@@ -162,7 +162,7 @@ class WeChatBot:
     async def _dispatch(self, raw: WeChatMessage) -> None:
         """Route a single inbound message through registered handlers."""
         # Only process USER messages (ignore bot's own messages)
-        if raw.message_type != 1:  # MessageType.USER
+        if raw.message_type != MessageType.USER:
             return
         if not raw.item_list:
             return

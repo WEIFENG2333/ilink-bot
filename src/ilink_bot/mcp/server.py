@@ -24,6 +24,8 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any
 
+from ilink_bot.models.messages import MessageItemType, MessageType
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
@@ -56,22 +58,33 @@ def _extract_text(msg: Any) -> str:
     title is prepended as ``[引用: <title>]\\n<text>``.
     """
     for item in msg.item_list or []:
-        if item.type == 1 and item.text_item:
+        if item.type == MessageItemType.TEXT and item.text_item:
             text = str(item.text_item.text or "")
             # Include quoted/referenced message context
             if item.ref_msg and item.ref_msg.title:
                 return f"[引用: {item.ref_msg.title}]\n{text}"
             return text
-        if item.type == 3 and item.voice_item and item.voice_item.text:
+        if item.type == MessageItemType.VOICE and item.voice_item and item.voice_item.text:
             return str(item.voice_item.text)
     return ""
 
 
 def _extract_type(msg: Any) -> str:
     """Return a human-readable type string for the first item in a message."""
-    type_map = {0: "none", 1: "text", 2: "image", 3: "voice", 4: "file", 5: "video"}
+    _type_names = {
+        MessageItemType.NONE: "none",
+        MessageItemType.TEXT: "text",
+        MessageItemType.IMAGE: "image",
+        MessageItemType.VOICE: "voice",
+        MessageItemType.FILE: "file",
+        MessageItemType.VIDEO: "video",
+    }
     for item in msg.item_list or []:
-        return type_map.get(item.type or 0, "unknown")
+        try:
+            item_type = MessageItemType(item.type or 0)
+        except ValueError:
+            return "unknown"
+        return _type_names.get(item_type, "unknown")
     return "none"
 
 
@@ -136,7 +149,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:  # type: i
                     _save_cursor(cursor)
                 for msg in resp.msgs:
                     # Only cache user messages (skip bot's own)
-                    if msg.message_type != 1:
+                    if msg.message_type != MessageType.USER:
                         continue
                     sender_id = msg.from_user_id or ""
                     sender_name = sender_id.split("@")[0] if "@" in sender_id else sender_id
