@@ -91,26 +91,46 @@ class ILinkClient:
     Parameters
     ----------
     token:
-        Bot token obtained via QR-code login.  If omitted the client will
-        attempt to load it from *token_file*.
+        Bot token obtained via QR-code login.  Falls back to ``ILINK_TOKEN``
+        env var, then the persisted *token_file*.
     base_url:
-        iLink API base URL.
+        iLink API base URL.  Falls back to ``ILINK_BASE_URL`` env var,
+        then the default ``https://ilinkai.weixin.qq.com``.
     token_file:
-        Path for persisting / loading the bot token.
+        Path for persisting / loading the bot token.  Falls back to
+        ``ILINK_TOKEN_FILE`` env var, then ``~/.ilink-bot/token.json``.
+    send_rate:
+        Token-bucket rate for ``sendmessage`` (tokens per second, default 1.0).
+    send_burst:
+        Token-bucket burst for ``sendmessage`` (default 3).
+
+    Environment Variables
+    ---------------------
+    ``ILINK_TOKEN``
+        Bot token (alternative to constructor *token* parameter).
+    ``ILINK_BASE_URL``
+        API base URL override.
+    ``ILINK_TOKEN_FILE``
+        Token file path override.
     """
 
     def __init__(
         self,
         *,
         token: str | None = None,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str | None = None,
         token_file: str | Path | None = None,
         send_rate: float = 1.0,
         send_burst: int = 3,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = (base_url or os.environ.get("ILINK_BASE_URL") or DEFAULT_BASE_URL).rstrip(
+            "/"
+        )
         self._token: str | None = token or os.environ.get("ILINK_TOKEN")
-        self._token_file = Path(token_file) if token_file else DEFAULT_TOKEN_FILE
+        tf_env = os.environ.get("ILINK_TOKEN_FILE")
+        self._token_file = (
+            Path(token_file) if token_file else Path(tf_env) if tf_env else DEFAULT_TOKEN_FILE
+        )
         self._bot_id: str = ""
         self._user_id: str = ""
         self._http: httpx.AsyncClient | None = None

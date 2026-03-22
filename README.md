@@ -283,11 +283,28 @@ ilink-bot webhook --url URL        # Start webhook gateway
 2. Environment variable: `ILINK_TOKEN`
 3. Token file: `~/.ilink-bot/token.json` (default)
 
+**已有 token 的用户无需扫码**，直接配置即可：
+
+```bash
+# 方式一：环境变量（推荐在 CI/CD 中使用）
+export ILINK_TOKEN="your_bot_token_here"
+ilink-bot send --to "user@im.wechat" "Hello!"
+
+# 方式二：命令行参数
+ilink-bot send --token "your_bot_token_here" --to "user@im.wechat" "Hello!"
+
+# 方式三：代码中直接传入
+from ilink_bot import ILinkClient
+client = ILinkClient(token="your_bot_token_here")
+```
+
 ### Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `ILINK_TOKEN` | Bot token (alternative to token file) |
+| `ILINK_TOKEN` | Bot token (alternative to token file / QR login) |
+| `ILINK_BASE_URL` | API base URL override (default: `https://ilinkai.weixin.qq.com`) |
+| `ILINK_TOKEN_FILE` | Token file path override (default: `~/.ilink-bot/token.json`) |
 
 ---
 

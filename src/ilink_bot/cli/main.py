@@ -95,6 +95,9 @@ def login(
 def send(
     message: str = typer.Argument(..., help="Message text to send"),
     to: str = typer.Option("", "--to", "-t", help="Recipient user ID"),
+    token: str = typer.Option(
+        "", "--token", "-k", help="Bot token (skip login)", envvar="ILINK_TOKEN"
+    ),
     token_file: Path = typer.Option(DEFAULT_TOKEN_FILE, "--token-file", "-f"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
@@ -110,7 +113,7 @@ def send(
         raise typer.Exit(1)
 
     async def _send() -> None:
-        async with ILinkClient(token_file=token_file) as client:
+        async with ILinkClient(token=token or None, token_file=token_file) as client:
             if not client.is_authenticated:
                 console.print("[red]Not logged in. Run `ilink-bot login` first.[/red]")
                 raise typer.Exit(1)
@@ -125,10 +128,11 @@ def send(
 
 @app.command()
 def status(
+    token: str = typer.Option("", "--token", "-k", help="Bot token", envvar="ILINK_TOKEN"),
     token_file: Path = typer.Option(DEFAULT_TOKEN_FILE, "--token-file", "-f"),
 ) -> None:
     """Show current bot connection status."""
-    client = ILinkClient(token_file=token_file)
+    client = ILinkClient(token=token or None, token_file=token_file)
     info = client.get_bot_info()
     if info.connected:
         console.print("[bold green]Connected[/bold green]")
@@ -170,6 +174,9 @@ def mcp(
 def webhook(
     url: str = typer.Option(..., "--url", "-u", help="Webhook URL to push messages to"),
     secret: str = typer.Option("", "--secret", "-s", help="HMAC-SHA256 signing secret"),
+    token: str = typer.Option(
+        "", "--token", "-k", help="Bot token (skip login)", envvar="ILINK_TOKEN"
+    ),
     token_file: Path = typer.Option(DEFAULT_TOKEN_FILE, "--token-file", "-f"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
@@ -179,7 +186,7 @@ def webhook(
     from ilink_bot.webhook.gateway import WebhookConfig, WebhookGateway
 
     async def _run() -> None:
-        client = ILinkClient(token_file=token_file)
+        client = ILinkClient(token=token or None, token_file=token_file)
         if not client.is_authenticated:
             console.print("[red]Not logged in. Run `ilink-bot login` first.[/red]")
             raise typer.Exit(1)

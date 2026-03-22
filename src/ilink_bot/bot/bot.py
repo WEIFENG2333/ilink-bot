@@ -80,13 +80,16 @@ class WeChatBot:
         self,
         *,
         token: str | None = None,
-        base_url: str = "https://ilinkai.weixin.qq.com",
+        base_url: str | None = None,
         token_file: str | Path | None = None,
         cursor_file: str | Path | None = None,
         max_concurrent: int = 10,
     ) -> None:
         tf = Path(token_file) if token_file else DEFAULT_TOKEN_FILE
-        self._client = ILinkClient(token=token, base_url=base_url, token_file=tf)
+        client_kwargs: dict[str, Any] = {"token": token, "token_file": tf}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        self._client = ILinkClient(**client_kwargs)
         self._cursor_file = Path(cursor_file) if cursor_file else tf.parent / "cursor.json"
         self._handlers: list[_HandlerEntry] = []
         self._error_handler: ErrorHandler | None = None
