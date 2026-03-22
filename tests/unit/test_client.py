@@ -88,6 +88,53 @@ class TestTokenPersistence:
         assert client.token is None
 
 
+class TestContextTokenCache:
+    def test_set_and_get(self):
+        client = ILinkClient(token="test")
+        assert client.get_context_token("user1") is None
+        client.set_context_token("user1", "ctx_abc")
+        assert client.get_context_token("user1") == "ctx_abc"
+
+    def test_resolve_explicit_wins(self):
+        client = ILinkClient(token="test")
+        client.set_context_token("user1", "cached_ctx")
+        assert client._resolve_context_token("user1", "explicit_ctx") == "explicit_ctx"
+
+    def test_resolve_falls_back_to_cache(self):
+        client = ILinkClient(token="test")
+        client.set_context_token("user1", "cached_ctx")
+        assert client._resolve_context_token("user1", None) == "cached_ctx"
+
+    def test_resolve_returns_none_when_no_cache(self):
+        client = ILinkClient(token="test")
+        assert client._resolve_context_token("user1", None) is None
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_updates_caches_context_tokens(self):
+        respx.post(f"{DEFAULT_BASE_URL}/ilink/bot/getupdates").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "ret": 0,
+                    "msgs": [
+                        {
+                            "message_id": 1,
+                            "from_user_id": "alice@im.wechat",
+                            "message_type": 1,
+                            "context_token": "ctx_from_alice",
+                            "item_list": [{"type": 1, "text_item": {"text": "hi"}}],
+                        }
+                    ],
+                    "get_updates_buf": "c1",
+                },
+            )
+        )
+        async with ILinkClient(token="test") as client:
+            await client.get_updates("")
+            assert client.get_context_token("alice@im.wechat") == "ctx_from_alice"
+
+
 @respx.mock
 class TestAPIRequests:
     @pytest.mark.asyncio

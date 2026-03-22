@@ -21,6 +21,9 @@
 - **强类型**：Pydantic 数据模型，完整的类型标注
 - **装饰器路由**：`@bot.on_message(filters.text)` 风格，开发体验接近 python-telegram-bot
 - **可组合过滤器**：支持 `&` `|` `~` 运算符自由组合
+- **富媒体消息**：图片、文件、视频、语音收发，CDN 加密自动处理 (AES-128-ECB)
+- **智能上下文**：`context_token` 自动缓存与回填，无需手动管理会话关联
+- **发送限流**：内置 Token Bucket 速率限制器，默认 1 msg/s，防止触发微信限制
 - **MCP Server**：一键暴露为 AI 工具（Claude Desktop / Claude Code / Cursor）
 - **Webhook Gateway**：长轮询转 HTTP POST，语言无关
 - **CLI 工具**：一行命令发微信，CI/CD 通知利器
@@ -40,6 +43,7 @@
 ├──────────────────────────────────────────────────┤
 │            Layer 1: ILinkClient                   │
 │  HTTP API  │  Token mgmt  │  Typed models         │
+│  CDN media │  Rate limiter │  context_token cache  │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -100,13 +104,29 @@ from ilink_bot import ILinkClient
 
 async def main():
     async with ILinkClient() as client:
-        # Send a message
+        # Send a text message
         await client.send_text("user@im.wechat", "Hello!")
 
-        # Poll for messages
+        # Send an image (auto CDN upload + AES encryption)
+        image_bytes = open("photo.jpg", "rb").read()
+        await client.send_image("user@im.wechat", image_bytes)
+
+        # Send a file
+        pdf_bytes = open("report.pdf", "rb").read()
+        await client.send_file("user@im.wechat", pdf_bytes, "report.pdf")
+
+        # Poll for messages (context_token auto-cached)
         resp = await client.get_updates()
         for msg in resp.msgs:
             print(f"From: {msg.from_user_id}")
+
+            # Download received media
+            if msg.item_list and msg.item_list[0].type == 2:  # IMAGE
+                media = msg.item_list[0].image_item.media
+                data = await client.download_media(
+                    media.encrypt_query_param, media.aes_key
+                )
+                open("received.jpg", "wb").write(data)
 
 asyncio.run(main())
 ```
@@ -178,7 +198,20 @@ ilink-bot mcp
 ilink-bot mcp --transport http --port 8080
 ```
 
-Claude Desktop configuration (`claude_desktop_config.json`):
+Claude Desktop / Claude Code configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "wechat": {
+      "command": "uvx",
+      "args": ["--from", "ilink-bot[mcp]", "ilink-bot", "mcp"]
+    }
+  }
+}
+```
+
+Or if installed globally:
 
 ```json
 {
@@ -265,7 +298,9 @@ src/ilink_bot/
 ├── __init__.py              # Public API exports
 ├── client/
 │   ├── __init__.py
-│   └── client.py            # Layer 1: ILinkClient (protocol)
+│   ├── client.py            # Layer 1: ILinkClient (protocol + media)
+│   ├── cdn.py               # AES-128-ECB CDN upload / download
+│   └── rate_limiter.py      # Async token-bucket rate limiter
 ├── models/
 │   ├── __init__.py
 │   └── messages.py          # Pydantic data models
@@ -275,7 +310,7 @@ src/ilink_bot/
 │   └── filters.py           # Filter system
 ├── mcp/
 │   ├── __init__.py
-│   └── server.py            # Layer 3a: MCP Server
+│   └── server.py            # Layer 3a: MCP Server (FastMCP)
 ├── webhook/
 │   ├── __init__.py
 │   └── gateway.py           # Layer 3b: Webhook Gateway

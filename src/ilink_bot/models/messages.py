@@ -382,6 +382,47 @@ class Message:
             context_token=self.context_token,
         )
 
+    async def reply_image(self, image_data: bytes) -> dict[str, Any]:
+        """Reply with an image (uploads via CDN automatically)."""
+        if self._client is None:
+            raise RuntimeError("Message has no associated ILinkClient; cannot reply.")
+        return await self._client.send_image(
+            to_user_id=self.from_user,
+            image_data=image_data,
+            context_token=self.context_token,
+        )
+
+    async def reply_file(self, file_data: bytes, file_name: str) -> dict[str, Any]:
+        """Reply with a file attachment (uploads via CDN automatically)."""
+        if self._client is None:
+            raise RuntimeError("Message has no associated ILinkClient; cannot reply.")
+        return await self._client.send_file(
+            to_user_id=self.from_user,
+            file_data=file_data,
+            file_name=file_name,
+            context_token=self.context_token,
+        )
+
+    async def reply_video(self, video_data: bytes) -> dict[str, Any]:
+        """Reply with a video (uploads via CDN automatically)."""
+        if self._client is None:
+            raise RuntimeError("Message has no associated ILinkClient; cannot reply.")
+        return await self._client.send_video(
+            to_user_id=self.from_user,
+            video_data=video_data,
+            context_token=self.context_token,
+        )
+
+    async def reply_voice(self, voice_data: bytes) -> dict[str, Any]:
+        """Reply with a voice message (uploads via CDN automatically)."""
+        if self._client is None:
+            raise RuntimeError("Message has no associated ILinkClient; cannot reply.")
+        return await self._client.send_voice(
+            to_user_id=self.from_user,
+            voice_data=voice_data,
+            context_token=self.context_token,
+        )
+
     def __repr__(self) -> str:
         preview = (self.text or "")[:40]
         return (

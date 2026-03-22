@@ -5,7 +5,10 @@ Handles all HTTP communication with the WeChat iLink server:
 - QR-code login flow
 - Long-poll ``getupdates``
 - ``sendmessage`` / ``sendtyping`` / ``getconfig``
+- CDN media upload / download (image, file, video, voice)
 - Token persistence
+- Per-user ``context_token`` caching
+- Send-rate limiting (token bucket)
 
 No business logic lives here — that belongs in Layer 2 (:mod:`ilink_bot.bot`).
 """
@@ -25,6 +28,8 @@ from typing import Any
 
 import httpx
 
+from ilink_bot.client.cdn import UploadedMedia, download_media, upload_media
+from ilink_bot.client.rate_limiter import AsyncRateLimiter
 from ilink_bot.models.messages import (
     BotInfo,
     BotToken,
@@ -37,6 +42,7 @@ from ilink_bot.models.messages import (
     QRCodeStatusResponse,
     TypingStatus,
     UpdatesResponse,
+    UploadMediaType,
 )
 
 logger = logging.getLogger("ilink_bot.client")
@@ -99,6 +105,8 @@ class ILinkClient:
         token: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         token_file: str | Path | None = None,
+        send_rate: float = 1.0,
+        send_burst: int = 3,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._token: str | None = token or os.environ.get("ILINK_TOKEN")
@@ -106,6 +114,12 @@ class ILinkClient:
         self._bot_id: str = ""
         self._user_id: str = ""
         self._http: httpx.AsyncClient | None = None
+
+        # Per-user context_token cache (user_id → latest context_token)
+        self._context_tokens: dict[str, str] = {}
+
+        # Rate limiter for sendmessage (token bucket)
+        self._send_limiter = AsyncRateLimiter(rate=send_rate, burst=send_burst)
 
         # Try loading persisted token if none supplied
         if not self._token:
@@ -315,6 +329,10 @@ class ILinkClient:
     async def get_updates(self, cursor: str = "") -> UpdatesResponse:
         """Long-poll for new messages.
 
+        Automatically caches ``context_token`` from inbound user messages so
+        that subsequent :meth:`send_text` / :meth:`send_image` calls can
+        auto-resolve the token if the caller does not provide one.
+
         Parameters
         ----------
         cursor:
@@ -327,11 +345,43 @@ class ILinkClient:
                 {"get_updates_buf": cursor, "base_info": _build_base_info()},
                 timeout=LONG_POLL_TIMEOUT + 5,
             )
-            return UpdatesResponse(**data)
+            resp = UpdatesResponse(**data)
         except httpx.TimeoutException:
             # Long-poll timeout is expected — return empty response so caller can retry
             logger.debug("getUpdates: long-poll timeout (normal)")
             return UpdatesResponse(ret=0, msgs=[], get_updates_buf=cursor)
+
+        # Auto-cache context_tokens from inbound messages
+        for msg in resp.msgs:
+            if msg.from_user_id and msg.context_token:
+                self._context_tokens[msg.from_user_id] = msg.context_token
+
+        return resp
+
+    # -- context_token helpers ---------------------------------------------
+
+    def get_context_token(self, user_id: str) -> str | None:
+        """Return the cached ``context_token`` for *user_id*, if any."""
+        return self._context_tokens.get(user_id)
+
+    def set_context_token(self, user_id: str, token: str) -> None:
+        """Manually set the ``context_token`` for *user_id*."""
+        self._context_tokens[user_id] = token
+
+    def _resolve_context_token(self, to_user_id: str, explicit: str | None) -> str | None:
+        """Return *explicit* if given, else look up the cached token."""
+        if explicit:
+            return explicit
+        return self._context_tokens.get(to_user_id)
+
+    # =====================================================================
+    # Messaging APIs
+    # =====================================================================
+
+    async def _send_message(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Rate-limited wrapper around the ``sendmessage`` endpoint."""
+        await self._send_limiter.acquire()
+        return await self._post("ilink/bot/sendmessage", body)
 
     async def send_text(
         self,
@@ -340,7 +390,12 @@ class ILinkClient:
         *,
         context_token: str | None = None,
     ) -> dict[str, Any]:
-        """Send a text message."""
+        """Send a text message.
+
+        If *context_token* is ``None``, the client automatically uses the
+        cached token from the most recent inbound message from *to_user_id*.
+        """
+        ctx = self._resolve_context_token(to_user_id, context_token)
         client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
         body = {
             "msg": {
@@ -350,11 +405,11 @@ class ILinkClient:
                 "message_type": MessageType.BOT.value,
                 "message_state": MessageState.FINISH.value,
                 "item_list": [{"type": MessageItemType.TEXT.value, "text_item": {"text": text}}],
-                **({"context_token": context_token} if context_token else {}),
+                **({"context_token": ctx} if ctx else {}),
             },
             "base_info": _build_base_info(),
         }
-        result = await self._post("ilink/bot/sendmessage", body)
+        result = await self._send_message(body)
         return {"message_id": client_id, **result}
 
     async def send_typing(
@@ -379,14 +434,265 @@ class ILinkClient:
         context_token: str | None = None,
     ) -> GetConfigResponse:
         """Fetch bot config (includes ``typing_ticket``) for a user."""
+        ctx = self._resolve_context_token(user_id, context_token)
         body: dict[str, Any] = {
             "ilink_user_id": user_id,
             "base_info": _build_base_info(),
         }
-        if context_token:
-            body["context_token"] = context_token
+        if ctx:
+            body["context_token"] = ctx
         data = await self._post("ilink/bot/getconfig", body, timeout=10.0)
         return GetConfigResponse(**data)
+
+    # =====================================================================
+    # CDN — upload URL acquisition
+    # =====================================================================
+
+    async def get_upload_url(
+        self,
+        *,
+        file_md5: str,
+        file_size: int,
+        cipher_size: int,
+        media_type: int,
+        to_user_id: str,
+        filekey: str,
+        aes_key_hex: str,
+    ) -> dict[str, Any]:
+        """Call ``getuploadurl`` to obtain a CDN upload authorisation.
+
+        This method is mainly used internally by :func:`upload_media` but
+        is exposed for advanced use-cases.
+        """
+        body: dict[str, Any] = {
+            "to_user_id": to_user_id,
+            "media_type": media_type,
+            "file_md5": file_md5,
+            "file_size": file_size,
+            "cipher_size": cipher_size,
+            "filekey": filekey,
+            "aes_key": aes_key_hex,
+            "base_info": _build_base_info(),
+        }
+        return await self._post("ilink/bot/getuploadurl", body, timeout=15.0)
+
+    # =====================================================================
+    # Media send helpers (image / file / video / voice)
+    # =====================================================================
+
+    async def _upload_and_build_item(
+        self,
+        file_data: bytes,
+        media_type: UploadMediaType,
+        to_user_id: str,
+    ) -> UploadedMedia:
+        """Upload *file_data* to the CDN and return the upload result."""
+        http = await self._ensure_http()
+        return await upload_media(
+            http=http,
+            file_data=file_data,
+            media_type=media_type.value,
+            to_user_id=to_user_id,
+            upload_url_getter=self.get_upload_url,
+        )
+
+    async def send_image(
+        self,
+        to_user_id: str,
+        image_data: bytes,
+        *,
+        context_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload and send an image message.
+
+        Parameters
+        ----------
+        to_user_id:
+            Recipient WeChat user ID.
+        image_data:
+            Raw image bytes (JPEG / PNG / etc.).
+        context_token:
+            Optional; auto-resolved from cache if omitted.
+        """
+        ctx = self._resolve_context_token(to_user_id, context_token)
+        uploaded = await self._upload_and_build_item(image_data, UploadMediaType.IMAGE, to_user_id)
+        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "message_type": MessageType.BOT.value,
+                "message_state": MessageState.FINISH.value,
+                "item_list": [
+                    {
+                        "type": MessageItemType.IMAGE.value,
+                        "image_item": {
+                            "media": {
+                                "encrypt_query_param": uploaded.download_param,
+                                "aes_key": uploaded.aes_key_hex,
+                                "encrypt_type": 1,
+                            },
+                        },
+                    }
+                ],
+                **({"context_token": ctx} if ctx else {}),
+            },
+            "base_info": _build_base_info(),
+        }
+        result = await self._send_message(body)
+        return {"message_id": client_id, **result}
+
+    async def send_file(
+        self,
+        to_user_id: str,
+        file_data: bytes,
+        file_name: str,
+        *,
+        context_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload and send a file message.
+
+        Parameters
+        ----------
+        to_user_id:
+            Recipient WeChat user ID.
+        file_data:
+            Raw file bytes.
+        file_name:
+            Display file name.
+        context_token:
+            Optional; auto-resolved from cache if omitted.
+        """
+        import hashlib
+
+        ctx = self._resolve_context_token(to_user_id, context_token)
+        uploaded = await self._upload_and_build_item(file_data, UploadMediaType.FILE, to_user_id)
+        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "message_type": MessageType.BOT.value,
+                "message_state": MessageState.FINISH.value,
+                "item_list": [
+                    {
+                        "type": MessageItemType.FILE.value,
+                        "file_item": {
+                            "media": {
+                                "encrypt_query_param": uploaded.download_param,
+                                "aes_key": uploaded.aes_key_hex,
+                                "encrypt_type": 1,
+                            },
+                            "file_name": file_name,
+                            "md5": hashlib.md5(file_data).hexdigest(),
+                            "len": str(uploaded.file_size),
+                        },
+                    }
+                ],
+                **({"context_token": ctx} if ctx else {}),
+            },
+            "base_info": _build_base_info(),
+        }
+        result = await self._send_message(body)
+        return {"message_id": client_id, **result}
+
+    async def send_video(
+        self,
+        to_user_id: str,
+        video_data: bytes,
+        *,
+        context_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload and send a video message."""
+        ctx = self._resolve_context_token(to_user_id, context_token)
+        uploaded = await self._upload_and_build_item(video_data, UploadMediaType.VIDEO, to_user_id)
+        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "message_type": MessageType.BOT.value,
+                "message_state": MessageState.FINISH.value,
+                "item_list": [
+                    {
+                        "type": MessageItemType.VIDEO.value,
+                        "video_item": {
+                            "media": {
+                                "encrypt_query_param": uploaded.download_param,
+                                "aes_key": uploaded.aes_key_hex,
+                                "encrypt_type": 1,
+                            },
+                            "video_size": uploaded.file_size,
+                        },
+                    }
+                ],
+                **({"context_token": ctx} if ctx else {}),
+            },
+            "base_info": _build_base_info(),
+        }
+        result = await self._send_message(body)
+        return {"message_id": client_id, **result}
+
+    async def send_voice(
+        self,
+        to_user_id: str,
+        voice_data: bytes,
+        *,
+        context_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload and send a voice message."""
+        ctx = self._resolve_context_token(to_user_id, context_token)
+        uploaded = await self._upload_and_build_item(voice_data, UploadMediaType.VOICE, to_user_id)
+        client_id = f"ilink-bot-{uuid.uuid4().hex[:12]}"
+        body = {
+            "msg": {
+                "from_user_id": "",
+                "to_user_id": to_user_id,
+                "client_id": client_id,
+                "message_type": MessageType.BOT.value,
+                "message_state": MessageState.FINISH.value,
+                "item_list": [
+                    {
+                        "type": MessageItemType.VOICE.value,
+                        "voice_item": {
+                            "media": {
+                                "encrypt_query_param": uploaded.download_param,
+                                "aes_key": uploaded.aes_key_hex,
+                                "encrypt_type": 1,
+                            },
+                        },
+                    }
+                ],
+                **({"context_token": ctx} if ctx else {}),
+            },
+            "base_info": _build_base_info(),
+        }
+        result = await self._send_message(body)
+        return {"message_id": client_id, **result}
+
+    # =====================================================================
+    # CDN — download helper
+    # =====================================================================
+
+    async def download_media(
+        self,
+        encrypt_query_param: str,
+        aes_key: str,
+    ) -> bytes:
+        """Download and decrypt a media file from the CDN.
+
+        Parameters
+        ----------
+        encrypt_query_param:
+            Value from ``media.encrypt_query_param`` in the message.
+        aes_key:
+            AES key (hex or base64) from the message's ``media.aes_key``.
+        """
+        http = await self._ensure_http()
+        return await download_media(http, encrypt_query_param, aes_key)
 
     # =====================================================================
     # Context manager support
