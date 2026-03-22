@@ -74,7 +74,7 @@ def login(
 
             # Try to display QR in terminal
             try:
-                import qrcode as qr_lib  # type: ignore[import-untyped]
+                import qrcode as qr_lib  # type: ignore[import-not-found,unused-ignore]
 
                 q = qr_lib.QRCode(border=1)
                 q.add_data(qr.qrcode_img_content)

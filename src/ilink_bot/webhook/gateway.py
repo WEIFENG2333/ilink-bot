@@ -59,7 +59,7 @@ class WebhookGateway:
             hashlib.sha256,
         ).hexdigest()
 
-    def _format_message(self, msg: WeChatMessage) -> dict:
+    def _format_message(self, msg: WeChatMessage) -> dict[str, object]:
         """Convert a raw message to the webhook payload format."""
         text = ""
         msg_type = "unknown"
@@ -92,7 +92,7 @@ class WebhookGateway:
             "context_token": msg.context_token or "",
         }
 
-    async def _push(self, payload: dict) -> bool:
+    async def _push(self, payload: dict[str, object]) -> bool:
         """Push a single webhook payload with retries."""
         if self._http is None or self._http.is_closed:
             self._http = httpx.AsyncClient(timeout=self.config.timeout)

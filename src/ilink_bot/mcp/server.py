@@ -97,9 +97,9 @@ def create_mcp_server(
     def _extract_text(msg: Any) -> str:
         for item in msg.item_list or []:
             if item.type == 1 and item.text_item:
-                return item.text_item.text or ""
+                return str(item.text_item.text or "")
             if item.type == 3 and item.voice_item and item.voice_item.text:
-                return item.voice_item.text
+                return str(item.voice_item.text)
         return ""
 
     def _extract_type(msg: Any) -> str:
@@ -110,7 +110,7 @@ def create_mcp_server(
 
     # ----- MCP Tools -----
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[misc,unused-ignore,untyped-decorator]
     async def wechat_send_message(
         to_user_id: str,
         content: str,
@@ -127,7 +127,7 @@ def create_mcp_server(
         result = await client.send_text(to_user_id, content, context_token=context_token)
         return f"Message sent (id={result.get('message_id', 'unknown')})"
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[misc,unused-ignore,untyped-decorator]
     async def wechat_get_messages(limit: int = 10) -> list[dict[str, Any]]:
         """Get recent messages received by the bot.
 
@@ -138,7 +138,7 @@ def create_mcp_server(
         limit = min(max(1, limit), 100)
         return _messages_cache[-limit:]
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[misc,unused-ignore,untyped-decorator]
     async def wechat_bot_status() -> dict[str, Any]:
         """Check the current bot connection status."""
         try:

@@ -142,7 +142,7 @@ class WeChatBot:
             return ""
         try:
             data = json.loads(self._cursor_file.read_text())
-            return data.get("get_updates_buf", "")
+            return str(data.get("get_updates_buf", ""))
         except Exception:
             logger.warning("Failed to load cursor from %s", self._cursor_file, exc_info=True)
             return ""
